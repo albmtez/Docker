@@ -8,6 +8,8 @@ JENKINS_HTTP_PORT=8083
 JENKINS_JNLP_PORT=50000
 # Container name used to execute.
 CONTAINER_NAME=jenkins
+# Command used to start the container
+CMD="docker run -d -p $JENKINS_HTTP_PORT:8080 -p $JENKINS_JNLP_PORT:50000 -v $JENKINS_HOME:/var/jenkins_home --name $CONTAINER_NAME jenkins/jenkins:lts"
 
 if [ "$#" = 0 ]; then
 	script_name=$(basename "$0")
@@ -47,11 +49,11 @@ function createHomeDir() {
 ###########################################################################################
 function getContainerStatus {
 	local val=$(docker ps --format "{{.Names}}" | grep -w $CONTAINER_NAME)
-	if [ "$val" == "jenkins" ]; then
+	if [ "$val" == $CONTAINER_NAME ]; then
 		return 0
 	else
 		val=$(docker ps -a --format "{{.Names}}" | grep -w $CONTAINER_NAME)
-		if [ "$val" == "jenkins" ]; then
+		if [ "$val" == $CONTAINER_NAME ]; then
 			return 1
 		else
 			return 2
@@ -79,7 +81,7 @@ function start() {
 		;;
 	2)
 		echo "Creating and starting $CONTAINER_NAME container."
-		ret=$(docker run -d -p $JENKINS_HTTP_PORT:8080 -p $JENKINS_JNLP_PORT:50000 -v $JENKINS_HOME:/var/jenkins_home --name $CONTAINER_NAME jenkins/jenkins:lts 2>&1)
+		ret=$($CMD 2>&1)
 		[ $? == 0 ] && echo -e "Container started: $ret \nAvailable at: http://localhost:$JENKINS_HTTP_PORT" || echo "Error starting container:\n$ret"
 	esac
 }
