@@ -11,19 +11,12 @@ CONTAINER_NAME=jenkins
 # Command used to start the container
 CMD="docker run -d -p $JENKINS_HTTP_PORT:8080 -p $JENKINS_JNLP_PORT:50000 -v $JENKINS_HOME:/var/jenkins_home --name $CONTAINER_NAME jenkins/jenkins:lts"
 
-if [ "$#" = 0 ]; then
-	script_name=$(basename "$0")
+###########################################################################################
+# Shows command usage
+###########################################################################################
+function usage() {
 	echo "Usage: $script_name (start | stop | restart | remove | status | logs)"
-	exit 0
-elif [ "$#" -gt 1 ]; then
-	echo "Too many parameters specified."
-	echo "Usage: $script_name (start | stop | restart | remove | status | logs)"
-	exit 1
-elif [ "$1" != "start" ] && [ "$1" != "stop" ] && [ "$1" != "restart" ] && [ "$1" != "remove" ] && [ "$1" != "status" ] && [ "$1" != "logs" ]; then
-	echo "Option '$1' not valid."
-	echo "Usage: $script_name (start | stop | restart | remove | status | logs)"
-	exit 1
-fi
+}
 
 ###########################################################################################
 # Jenkins home dir $JENKINS_HOME creation if not exists.
@@ -180,6 +173,20 @@ function logs() {
 		echo "Container not created."
 	fi
 }
+
+if [ "$#" = 0 ]; then
+	script_name=$(basename "$0")
+	usage
+	exit 0
+elif [ "$#" -gt 1 ]; then
+	echo "Too many parameters specified."
+	usage
+	exit 1
+elif [ "$1" != "start" ] && [ "$1" != "stop" ] && [ "$1" != "restart" ] && [ "$1" != "remove" ] && [ "$1" != "status" ] && [ "$1" != "logs" ]; then
+	echo "Option '$1' not valid."
+	usage
+	exit 1
+fi
 
 case $1 in
 "start")
