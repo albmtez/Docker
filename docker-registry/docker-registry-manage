@@ -1,0 +1,248 @@
+#!/bin/bash
+
+# Doc: https://github.com/docker/distribution/blob/master/docs/spec/api.md#deleting-an-image
+#      https://github.com/docker/distribution/issues/1579
+#
+#      https://github.com/docker/distribution/issues/1573 ----> REGISTRY_STORAGE_DELETE_ENABLED=true
+#
+# Listar repositorios:
+#    curl mortadelo:5000/v2/_catalog
+#
+#    {"repositories":["my-registry","my-ubuntu"]}
+#
+# Listar tags de una imagen:
+#    curl mortadelo:5000/v2/my-ubuntu/tags/list
+#
+#    {"name":"my-ubuntu","tags":["latest","test","16.04"]}
+#
+# Recuperar el digest de un tag:
+#    curl -v -s mortadelo:5000/v2/my-ubuntu/manifests/latest 2>&1 | grep "< Docker-Content-Digest:" | awk '{ print $3 }'
+#
+#    sha256:e26b8f455a1c097ba80162a7d5316952fee3712cd7ff0891fb0a0c9531c95bd9
+#
+#    curl -v -s "Accept:application/vnd.docker.distribution.manifest.v2+json" mortadelo:5000/v2/my-ubuntu/manifests/latest 2>&1 | grep "HTTP/1.1 " | awk '{ print $3 }'
+#       --> 200 ok
+#       --> 400 MANIFEST UNKNOWN
+#
+# Borrado de una imagen:
+#    curl -v -s -H "Accept: application/vnd.docker.distribution.manifest.v2+json" -X DELETE "mortadelo:5000/v2/my-ubuntu/manifests/sha256:90f24abe180424046a5d53f6fc6f9fdb8f79b835cb2fd7d1a782e4c30dfb5dcc" 2>&1
+#
+#    *   Trying 127.0.1.1...
+#    * TCP_NODELAY set
+#    * Connected to mortadelo (127.0.1.1) port 5000 (#0)
+#    > DELETE /v2/my-ubuntu/manifests/sha256:90f24abe180424046a5d53f6fc6f9fdb8f79b835cb2fd7d1a782e4c30dfb5dcc HTTP/1.1
+#    > Host: mortadelo:5000
+#    > User-Agent: curl/7.60.0
+#    > Accept: application/vnd.docker.distribution.manifest.v2+json
+#    >
+#    < HTTP/1.1 202 Accepted
+#    < Docker-Distribution-Api-Version: registry/2.0
+#    < X-Content-Type-Options: nosniff
+#    < Date: Fri, 29 Jun 2018 14:50:51 GMT
+#    < Content-Length: 0
+#    < Content-Type: text/plain; charset=utf-8
+#    <
+#    * Connection #0 to host mortadelo left intact
+#
+# Opciones:
+#    list_repo      : Lista los repositorios disponibles
+#    list_repo_full : Lista los repositirios disponibles con los tags de cada uno de ellos
+#    list_tags      : Lista los tags de un repositorio
+#    remove_tag     : Elimina un tag de un repositorio
+#
+# curl -s ---> silent mode
+
+###########################################################################################
+# Shows command usage
+###########################################################################################
+function usage() {
+	echo -e "Usage: $script_name (list_images <registry> | list_images_full <registry> | list_tags <registry> <image_name> | remove_tag <registry> <image_name>:<tag_name>)\n"
+	echo -e "  list_images <registry> - Lists all images in the registry."
+	echo -e "  list_images_full <registry> - List all images in the registry including the list of all tags for each one."
+	echo -e "  list_tags <registry> <image_name> - List all of the image's tags in a registry."
+	echo -e "  remove_tag <registry> <image_name>:<tag_name> - Remove the <image_name>:<tag_name> from the registry, purging all files.\n"
+}
+
+###########################################################################################
+#
+###########################################################################################
+function get_images() {
+	#local registry=$1
+	#local res=$(curl -s $registry/v2/_catalog | jq -r '.repositories[]')
+	#echo $res
+	local registry=$1
+	local res=$(curl $registry/v2/_catalog 2>&1)
+	local rc=$?
+	local error=$(echo $res | grep "curl: ")
+	local ret_code=0
+	if [ ! $rc = 0 ]; then
+		echo -e "Error: Impossible to retrieve the images list from registry $registry"
+		echo "Error description: $error"
+		ret_code=1
+	elif [[ -z $error ]]; then
+		res=$(curl -s $registry/v2/_catalog | jq -r '.repositories[]')
+		if [[ -z $res ]]; then
+			ret_code=2
+		else
+			#echo "Images available in registry $registry:"
+			echo $res
+			ret_code=0
+		fi
+	else
+		descr=${error#*curl: }
+		echo -e "Error: Impossible to retrieve the images list from registry $registry"
+		echo "Error description: $descr"
+		ret_code=1
+	fi
+	return $ret_code
+}
+
+###########################################################################################
+#
+###########################################################################################
+function list_images() {
+	local registry=$1
+	res=$(get_images $registry 2>&1)
+	rc=$?
+	# get_images $registry
+	if [ $rc = 0 ]; then
+		echo "Images available in registry $registry:"
+		echo $res | tr " " "\n"
+		return 0
+	elif [ $rc = 2 ]; then
+		echo "No images available in registry $registry."
+	else
+		echo -e "$res"
+	fi
+}
+
+###########################################################################################
+#
+###########################################################################################
+function find_tags() {
+	local retgistry=$1
+	local image=$2
+	res=$(curl -s $registry/v2/$image/tags/list | jq -r 'select(.tags != null) | .tags[]')
+	echo $res
+}
+
+###########################################################################################
+#
+###########################################################################################
+function list_images_full() {
+	local registry=$1
+	res=$(get_images $registry 2>&1)
+	rc=$?
+	# get_images $registry
+	if [ $rc = 0 ]; then
+		echo "Images available in registry $registry:"
+		for image in $res; do
+			tags=$(find_tags $registry $image)
+			echo "$image [${tags// /, }]"
+		done
+		return 0
+	elif [ $rc = 2 ]; then
+		echo "No images available in registry $registry."
+	else
+		echo -e "$res"
+	fi
+}
+
+###########################################################################################
+#
+###########################################################################################
+function list_tags() {
+	local registry=$1
+	local image=$2
+	tags=$(find_tags $registry $image)
+	if [[ -z $tags ]]; then
+		echo "No tags found for $image in registry $registry."
+	else
+		echo "[${tags// /, }]"
+	fi
+}
+
+###########################################################################################
+#
+###########################################################################################
+function remove_tag() {
+	local registry=$1
+	local image=$2
+	local tag=$3
+	res=$(get_images $registry)
+	rc=$?
+	if [ $rc = 1 ]; then
+		echo -e "$res"
+		return 1
+	else
+		digest=$(curl -v $registry/v2/$image/manifests/$tag 2>&1 | grep "< Docker-Content-Digest:" | awk '{ print $3 }')
+		if [[ -z $digest ]]; then
+			echo "Error: The tag specified does not exist in registry $registry."
+		else
+			echo $registry
+			echo $image
+			echo $tag
+			echo $digest
+			res=$(curl -v -s -H "Accept: application/vnd.docker.distribution.manifest.v2+json" -X DELETE "$registry/v2/$image/manifests/$digest")
+			echo $?
+			echo $res
+		fi
+	fi
+}
+
+if [ "$#" = 0 ]; then
+	script_name=$(basename "$0")
+	usage
+	exit 1
+elif [ ! "$#" -gt 1 ]; then
+	echo -e "Error: Few parameters specified.\n"
+	usage
+	exit 1
+elif [ "$1" != "list_images" ] && [ "$1" != "list_images_full" ] && [ "$1" != "list_tags" ] && [ "$1" != "remove_tag" ]; then
+	echo "Option '$1' not valid."
+	usage
+	exit 1
+else
+	operation=$1
+	registry=$2
+fi
+
+case $operation in
+"list_images")
+	list_images $registry
+	rc=$?
+	;;
+"list_images_full")
+	list_images_full $registry
+	rc=$?
+	;;
+"list_tags")
+	if [[ -z $3 ]]; then
+		echo -e "Error: Image not specified.\n"
+		usage
+		exit 1
+	else
+		image=$3
+		list_tags $registry $image
+		rc=$?
+	fi
+	;;
+"remove_tag")
+	if [[ -z $3 ]]; then
+		echo -e "Error: Image not specified.\n"
+		usage
+		exit 1
+	elif [[ -z $4 ]]; then
+		echo -e "Error: Tag not specified.\n"
+		usage
+		exit 1
+	else
+		image=$3
+		tag=$4
+		remove_tag $registry $image $tag
+		rc=$?
+	fi
+	;;
+esac
+
+exit $rc
