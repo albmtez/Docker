@@ -8,6 +8,8 @@ You can manage the service using the shellscript `docker-registry`.
 
 The registry is started using a fixed directory for storage mounted as a volume in Docker container. This allows to easily backup the registry.
 
+Docker image used: registry:2.
+
 ### Usage
 
 ```
